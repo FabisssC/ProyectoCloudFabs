@@ -1,0 +1,101 @@
+# ================================
+# Python
+# ================================
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.so
+*.egg-info/
+.eggs/
+
+# ================================
+# Virtual environments
+# ================================
+.venv/
+venv/
+env/
+venv_proy/
+
+# ================================
+# Build / packaging
+# ================================
+build/
+dist/
+pip-wheel-metadata/
+
+# ================================
+# Test / coverage
+# ================================
+.pytest_cache/
+.coverage
+coverage.xml
+htmlcov/
+
+# ================================
+# Logs / runtime outputs
+# ================================
+logs/
+out/
+tmp/
+*.log
+
+# ================================
+# Jupyter / notebooks
+# ================================
+.ipynb_checkpoints/
+
+# ================================
+# OS / editors
+# ================================
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# ================================
+# Environment / secrets
+# ================================
+.env
+.env.*
+*.key
+*.pem
+
+# SOLO ignora JSON sensibles (no todos)
+credentials/*.json
+
+# Mantener schemas
+!data_contracts/schema/*.json
+!*.example
+
+# ================================
+# Cloud / credentials
+# ================================
+credentials/
+
+# ================================
+# Terraform
+# ================================
+.terraform/
+terraform.tfstate
+terraform.tfstate.*
+.terraform.lock.hcl
+
+# ================================
+# DATA (IMPORTANTE)
+# ================================
+
+# Ignorar datos pesados del proyecto
+Proyecto/data_sources/
+
+# Si usas samples ligeros, permite README
+Proyecto/data_samples/*
+!Proyecto/data_samples/README.md
+
+# Opcional: ignorar formatos pesados SOLO dentro de carpetas de data
+Proyecto/**/*.parquet
+Proyecto/**/*.zip
+Proyecto/**/*.xlsx
+
+# NO ignores globalmente *.csv
+# (puedes necesitar CSV pequeños para tests o schemas)
