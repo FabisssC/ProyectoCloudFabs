@@ -1,16 +1,24 @@
-.PHONY: venv install lint test run
+ifeq ($(OS),Windows_NT)
+PYTHON := .venv/Scripts/python.exe
+PIP := .venv/Scripts/pip.exe
+else
+PYTHON := .venv/bin/python
+PIP := .venv/bin/pip
+endif
+
+.PHONY: venv install install-dev test lint
 
 venv:
 	python -m venv .venv
 
-install:
-	. .venv/bin/activate && pip install -r requirements.txt
+install: venv
+	$(PIP) install -r requirements.txt
+
+install-dev: venv
+	$(PIP) install -r requirements.txt -r requirements-dev.txt
 
 test:
-	. .venv/bin/activate && pytest -q
-
-run:
-	. .venv/bin/activate && python -m pipeline.main
+	$(PYTHON) -m pytest -q
 
 lint:
-	. .venv/bin/activate && python -m compileall src
+	$(PYTHON) -m compileall src
