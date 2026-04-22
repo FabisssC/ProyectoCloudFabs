@@ -1,0 +1,21 @@
+{
+  "table": "bronze_transactions",
+  "columns": {
+    "authorized_flag": {"type": "string", "nullable": true},
+    "card_id": {"type": "string", "nullable": false},
+    "city_id": {"type": "int", "nullable": true},
+    "category_1": {"type": "string", "nullable": true},
+    "installments": {"type": "int", "nullable": true},
+    "category_3": {"type": "string", "nullable": true},
+    "merchant_category_id": {"type": "int", "nullable": true},
+    "merchant_id": {"type": "string", "nullable": true},
+    "month_lag": {"type": "int", "nullable": true},
+    "purchase_amount": {"type": "float", "nullable": false},
+    "purchase_date": {"type": "string", "nullable": false},
+    "category_2": {"type": "float", "nullable": true},
+    "state_id": {"type": "int", "nullable": true},
+    "subsector_id": {"type": "int", "nullable": true},
+    "source_name": {"type": "string", "nullable": false},
+    "ingest_ts": {"type": "string", "nullable": false}
+  }
+}

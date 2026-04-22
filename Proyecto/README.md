@@ -2,213 +2,236 @@
 
 ## Resumen
 
-Este proyecto construye un pipeline de datos con arquitectura medallion para integrar tres fuentes heterogeneas:
+Este proyecto implementa un pipeline medallion para crear una capa gold que ayude al analisis de fraude financiero a partir de:
 
-- Transacciones de tarjetas
-- Catalogo de merchants
-- Tipo de cambio diario desde API
+- transacciones historicas en CSV
+- catalogo de merchants en CSV
+- tipo de cambio diario desde API
 
-El objetivo es dejar una base reproducible para ingerir datos en `bronze`, limpiarlos y enriquecerlos en `silver`, y publicar metricas analiticas en `gold` para analisis de fraude.
+La referencia cloud principal es GCP. A la fecha ya estan implementadas las capas `bronze`, `silver` y `gold`, junto con validacion por contratos, procesamiento por particiones, incremental simulado y backfill controlado.
 
-La nube principal del proyecto sera GCP, con una extension secundaria pensada para AWS en la etapa final.
+## Estado por etapas
 
-## Alcance del Dia 1
+- Etapa 1: estructura base, README, arquitectura y entorno
+- Etapa 2: ingesta local a `bronze`
+- Etapa 3: contratos de datos y validacion automatica
+- Etapa 4: limpieza e integracion para `silver`
+- Etapa 5: capa `gold`, incremental y backfill
+- Etapa 6: configuracion por `.env`, `Makefile`, `RUNBOOK`, CI y referencia de publicacion a GCP
 
-El Dia 1 deja cerrados estos puntos:
-
-- Estructura base del repositorio
-- Archivos obligatorios iniciales
-- Modelo de datos de las tres fuentes
-- Diseno funcional bronze / silver / gold
-- Clave de enriquecimiento principal
-- Estrategia incremental inicial
-- Instrucciones de entorno local y dependencias
-
-## Estructura del repositorio
-
-```text
-Proyecto/
-|-- architecture/
-|   |-- architecture.md
-|   |-- adr/
-|   `-- diagrams/
-|-- data_contracts/
-|   |-- expectations/
-|   `-- schema/
-|-- docs/
-|   `-- RUNBOOK.md
-|-- documentation/
-|   |-- COST_NOTES.md
-|   |-- RUNBOOK.md
-|   `-- SECURITY_NOTES.md
-|-- infra/
-|   |-- aws/
-|   |-- azure/
-|   `-- gcp/
-|-- notebooks/
-|-- src/
-|   `-- pipeline/
-|-- tests/
-|-- .env.example
-|-- .gitignore
-|-- Makefile
-|-- pyproject.toml
-|-- requirements.txt
-|-- requirements-dev.txt
-|-- requirements-aws.txt
-`-- requirements-azure.txt
-```
-
-`Proyecto/` es la carpeta de trabajo del proyecto. Aunque el repositorio Git vive un nivel arriba, la configuracion reproducible ya queda definida aqui para que no dependas de archivos sueltos fuera de esta carpeta.
-
-## Fuentes y modelo de datos
-
-### 1. Transacciones
-
-Fuente principal en CSV.
-
-Campos esperados a nivel funcional:
-
-- `transaction_id`
-- `card_id`
-- `merchant_id`
-- `purchase_timestamp`
-- `purchase_amount`
-- `currency_code`
-- `installments`
-- `authorized_flag`
-- `fraud_flag`
-
-### 2. Merchants
-
-Catalogo maestro en CSV.
-
-Campos esperados:
-
-- `merchant_id`
-- `merchant_name`
-- `merchant_category`
-- `country_code`
-- `city`
-- `state`
-
-### 3. Tipo de cambio
-
-Fuente externa por API.
-
-Campos esperados:
-
-- `rate_date`
-- `base_currency`
-- `target_currency`
-- `exchange_rate`
-- `provider`
-- `ingestion_timestamp`
-
-## Diseno bronze / silver / gold
+## Arquitectura funcional
 
 ### Bronze
 
-Datos crudos con normalizacion minima y trazabilidad de origen.
+Zona cruda con normalizacion ligera y metadatos de ingesta.
 
-- `bronze_transactions`
-- `bronze_merchants`
-- `bronze_fx_rates`
+Salidas:
+
+- `bronze/transactions/part_*.parquet`
+- `bronze/bronze_merchants.parquet`
+- `bronze/bronze_fx_rates.parquet`
 
 ### Silver
 
-Datos limpios, tipados y enriquecidos.
+Zona limpia e integrada.
 
-- `silver_enriched_transactions`
+Salidas:
 
-Reglas iniciales:
-
-- normalizar nombres de columnas
-- convertir fechas y montos
-- eliminar duplicados tecnicos
-- enriquecer con `merchant_id`
-- convertir moneda usando tipo de cambio por fecha
+- `silver/transactions/part_*.parquet`
+- `silver/silver_fx_rates.parquet`
 
 ### Gold
 
-Metrica analitica para consumo final.
+Zona analitica construida a partir de `silver/transactions`.
 
-- `gold_fraud_by_category`
-- `gold_fraud_by_country`
-- `gold_fraud_adjusted_amount`
+Salidas:
 
-## Decisiones clave del pipeline
+- `gold/card_summary/data.parquet`
+- `gold/merchant_summary/data.parquet`
+- `gold/daily_kpis/data.parquet`
 
-### Clave de enriquecimiento
+## Etapa 5: Gold, incremental y backfill
 
-La clave principal de join sera `merchant_id`.
+La capa gold se implemento con una estructura modular:
 
-Motivos:
+- `src/pipeline/gold/aggregations.py`
+- `src/pipeline/gold/build_gold.py`
+- `src/pipeline/gold/incremental.py`
+- `src/pipeline/gold/backfill.py`
+- `src/pipeline/gold/io_gold.py`
 
-- es la relacion mas estable entre transacciones y catalogo de merchants
-- evita joins ambiguos por nombre de comercio
-- facilita validaciones posteriores en silver
+### Salidas analiticas
 
-### Logica incremental
+- `card_summary`
+- `merchant_summary`
+- `daily_kpis`
 
-La estrategia inicial sera incremental por watermark local usando `purchase_timestamp`.
+### Caracteristicas tecnicas
 
-Reglas:
+- procesamiento por particiones de `silver/transactions`
+- sin cargar toda la capa silver en memoria
+- incremental simulado por deteccion de particiones nuevas
+- archivo de estado en `gold/_state/processed_partitions.json`
+- backfill controlado para reproceso consistente
 
-- guardar el ultimo timestamp procesado en un archivo de estado
-- procesar solo registros con fecha posterior al watermark
-- permitir backfill manual para reprocesar todo o desde una fecha dada
+## Contratos y calidad
 
-## Entorno local
+Los contratos activos viven en `data_contracts/schema/`:
 
-### Version recomendada
+- `bronze_transactions.json`
+- `bronze_merchants.json`
+- `bronze_fx_rates.json`
+- `silver_enriched_transactions.json`
 
-- Python 3.10 o superior
+La validacion automatica verifica:
 
-### Crear entorno virtual
+- columnas obligatorias
+- tipos esperados
+- nulabilidad
 
-PowerShell:
+## Testing
+
+El proyecto ya tiene tests para:
+
+- contratos de datos
+- transformaciones de silver
+- agregaciones de gold
+- incremental con nuevas particiones
+
+Resumen actual reportado por tu avance:
+
+- 8 tests aprobados
+
+## Ejecucion local
+
+### Preparar entorno
 
 ```powershell
 cd Proyecto
 python -m venv .venv
 .venv\Scripts\Activate.ps1
-```
-
-Git Bash o Linux/macOS:
-
-```bash
-cd Proyecto
-python -m venv .venv
-source .venv/bin/activate
-```
-
-### Instalar dependencias
-
-Solo runtime:
-
-```bash
-pip install -r requirements.txt
-```
-
-Runtime + herramientas de desarrollo:
-
-```bash
 pip install -r requirements.txt -r requirements-dev.txt
+Copy-Item .env.example .env
 ```
 
-### Variables de entorno
+### Bronze
 
-1. Copiar `.env.example` a `.env`
-2. Ajustar rutas locales, proyecto GCP y buckets segun tu entorno
+```powershell
+python -m src.pipeline.orchestration.run_local_ingestion
+```
 
-## Estado actual
+### Silver
 
-El repositorio ya queda listo como base formal del Dia 1. La implementacion de ingesta local del Dia 2 todavia esta pendiente.
+```powershell
+python -m src.pipeline.transform.build_silver
+```
+
+### Gold full
+
+```powershell
+python -m src.pipeline.gold.build_gold --mode full
+```
+
+### Gold incremental
+
+```powershell
+python -m src.pipeline.gold.build_gold --mode incremental
+```
+
+### Gold backfill
+
+```powershell
+python -m src.pipeline.gold.build_gold --mode backfill --partitions part_00001.parquet
+```
+
+## Etapa 6: Referencia GCP
+
+Configuracion actual del proyecto:
+
+- nombre del proyecto: `fraud-medallion-pipeline`
+- project id: `arboreal-logic-493416-i6`
+- region operativa: `us-east1`
+- cuenta de servicio planeada: `sa-medallion-pipeline`
+- datasets BigQuery creados: `bronze`, `silver`, `gold`
+
+La implementacion de referencia preparada en esta etapa hace lo siguiente:
+
+- publica `bronze/` y `silver/` a GCS
+- publica `gold` en BigQuery
+- deja comandos de automatizacion en `Makefile`
+- deja CI minima en GitHub Actions
+
+### Autenticacion usada en desarrollo
+
+Durante la validacion local de la referencia GCP se utilizo autenticacion mediante Application Default Credentials con `gcloud auth application-default login`, lo que permitio ejecutar pruebas reales sin almacenar archivos sensibles dentro del repositorio.
+
+Esta estrategia fue adecuada para desarrollo. Para una version operativa o productiva, se recomienda migrar a una cuenta de servicio dedicada con permisos minimos sobre GCS y BigQuery, evitando dependencia de credenciales interactivas de usuario.
+
+### Publicacion GCP
+
+```powershell
+python -m src.pipeline.orchestration.publish_gcp_reference
+```
+
+## Validacion en BigQuery
+
+Ejemplos de consultas para validar las tablas publicadas:
+
+```sql
+SELECT * FROM `arboreal-logic-493416-i6.gold.card_summary` LIMIT 10;
+SELECT * FROM `arboreal-logic-493416-i6.gold.merchant_summary` LIMIT 10;
+SELECT * FROM `arboreal-logic-493416-i6.gold.daily_kpis` LIMIT 10;
+```
+
+## Deteccion de fraude habilitada por gold
+
+La validacion de fraude no se abordo mediante un modelo predictivo, sino a traves de la generacion de agregaciones analiticas en la capa gold. Estas permiten identificar comportamientos atipicos mediante reglas de negocio simples, tales como volumenes inusuales de transacciones, montos elevados o patrones anomalos por tarjeta, comercio o dia.
+
+De esta manera, el pipeline habilita la deteccion de posibles casos de fraude a partir de analisis exploratorio y reglas definidas sobre las tablas finales en BigQuery.
+
+Ejemplo de clasificacion simple de riesgo sobre `card_summary`:
+
+```sql
+SELECT *,
+  CASE
+    WHEN total_amount > 100000 THEN 'HIGH_RISK'
+    WHEN total_transactions > 50 THEN 'MEDIUM_RISK'
+    ELSE 'LOW_RISK'
+  END AS risk_level
+FROM `arboreal-logic-493416-i6.gold.card_summary`;
+```
+
+## Estructura del repositorio
+
+```text
+Proyecto/
+|-- .github/workflows/ci.yml
+|-- architecture/
+|-- bronze/
+|-- data_contracts/schema/
+|-- docs/RUNBOOK.md
+|-- gold/
+|   |-- _state/
+|   |-- card_summary/
+|   |-- merchant_summary/
+|   `-- daily_kpis/
+|-- silver/
+|-- src/pipeline/
+|   |-- extract/
+|   |-- gold/
+|   |-- load/
+|   |-- orchestration/
+|   `-- transform/
+|-- tests/
+|-- .env.example
+|-- Makefile
+|-- pyproject.toml
+|-- requirements.txt
+`-- requirements-dev.txt
+```
 
 ## Siguientes pasos
 
-1. Implementar lectura de transacciones CSV
-2. Implementar lectura de merchants CSV
-3. Implementar extraccion de FX desde API
-4. Persistir salidas en `bronze`
+1. mantener ADC para desarrollo local
+2. si se quiere operacion no interactiva, crear credenciales de service account fuera del repositorio
+3. ampliar CI con lint y cobertura si la estructura ya no cambiara

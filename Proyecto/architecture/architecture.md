@@ -1,153 +1,236 @@
 # Arquitectura del Pipeline Multicloud
 
-## 1. Objetivo
+## 1. Objetivo arquitectonico
 
-Construir un pipeline reproducible para integrar datos de transacciones, merchants y tipo de cambio, y publicar metricas de fraude con arquitectura bronze / silver / gold.
+El proyecto implementa un pipeline de datos orientado a la deteccion de posibles patrones de fraude financiero mediante una arquitectura medallion `bronze / silver / gold`. Su finalidad es integrar fuentes heterogeneas, estandarizarlas, validarlas y transformarlas en activos analiticos que puedan ser consultados en BigQuery y utilizados para analisis exploratorio o reglas de negocio.
 
-## 2. Arquitectura logica
+La solucion se diseno para operar primero en entorno local y posteriormente proyectarse hacia una referencia cloud en Google Cloud Platform, manteniendo trazabilidad, particionamiento de archivos y una separacion clara entre capas de procesamiento.
+
+## 2. Alcance implementado
+
+Al momento de esta entrega se encuentran implementados los siguientes componentes:
+
+- ingesta local a la capa `bronze`
+- contratos de datos y validacion automatica
+- transformaciones e integracion para la capa `silver`
+- generacion de agregaciones analiticas en `gold`
+- estrategia incremental basada en particiones
+- backfill controlado para reconstruccion
+- publicacion de referencia hacia GCS y BigQuery en GCP
+
+## 3. Arquitectura logica
+
+La arquitectura logica del sistema se resume en el siguiente flujo:
 
 ```mermaid
 flowchart LR
-    A[CSV Transacciones] --> B[Bronze]
-    C[CSV Merchants] --> B
-    D[API FX Rates] --> B
-    B --> E[Silver Enriched Transactions]
-    E --> F[Gold Fraud Metrics]
-    F --> G[BigQuery]
-    B --> H[GCS]
-    E --> H
+    A[historical_transactions.csv] --> B[Bronze Transactions por partes]
+    C[merchants.csv] --> D[Bronze Merchants]
+    E[FX API] --> F[Bronze FX Rates]
+    B --> G[Validacion bronze]
+    D --> G
+    F --> G
+    G --> H[Clean Transactions]
+    G --> I[Clean Merchants]
+    G --> J[Clean FX]
+    H --> K[Join por merchant_id]
+    I --> K
+    K --> L[Silver Transactions por partes]
+    J --> M[Silver FX Rates]
+    L --> N[Gold Aggregations]
+    N --> O[card_summary]
+    N --> P[merchant_summary]
+    N --> Q[daily_kpis]
+    O --> R[BigQuery gold]
+    P --> R
+    Q --> R
+    B --> S[GCS bronze]
+    L --> T[GCS silver]
 ```
 
-## 3. Capas del pipeline
+Para fines de entrega formal, se recomienda exportar este diagrama Mermaid a PNG o SVG y adjuntarlo como imagen en el documento final, manteniendo el codigo fuente en el repositorio para futuras actualizaciones.
 
-### Bronze
+## 4. Descripcion de las capas
 
-Responsabilidad:
+### 4.1 Bronze
 
-- ingesta de cada fuente con el menor numero posible de cambios
-- trazabilidad de origen
-- estandarizacion minima de columnas
+La capa `bronze` funciona como zona de aterrizaje cruda. Su objetivo es conservar el significado original de los datos, aplicar una normalizacion minima de columnas y agregar metadatos de ingesta.
 
-Tablas:
+Responsabilidades principales:
 
-- `bronze_transactions`
-- `bronze_merchants`
-- `bronze_fx_rates`
+- preservar los datos con modificaciones minimas
+- normalizar nombres de columnas
+- agregar columnas de trazabilidad como `source_name` e `ingest_ts`
+- controlar el uso de memoria en fuentes voluminosas
 
-### Silver
+Activos generados:
 
-Responsabilidad:
+- `bronze/transactions/part_*.parquet`
+- `bronze/bronze_merchants.parquet`
+- `bronze/bronze_fx_rates.parquet`
 
-- limpieza de tipos
-- deduplicacion
-- reglas de calidad
-- integracion entre fuentes
-- conversion monetaria
+### 4.2 Silver
 
-Tabla principal:
+La capa `silver` consolida la limpieza estructural y la integracion entre fuentes. En esta capa se aplican reglas de tipado, eliminacion de duplicados y enriquecimiento transaccional a partir del catalogo de merchants.
 
-- `silver_enriched_transactions`
+Responsabilidades principales:
 
-### Gold
+- validar contratos de entrada
+- corregir y homogeneizar tipos de datos
+- eliminar duplicados
+- enriquecer transacciones mediante `merchant_id`
+- mantener las particiones para un procesamiento escalable
 
-Responsabilidad:
+Activos generados:
 
-- exposicion de metricas listas para analisis
-- salida para dashboards, reportes o modelos
+- `silver/transactions/part_*.parquet`
+- `silver/silver_fx_rates.parquet`
 
-Tablas planeadas:
+### 4.3 Gold
 
-- `gold_fraud_by_category`
-- `gold_fraud_by_country`
-- `gold_fraud_adjusted_amount`
+La capa `gold` transforma la informacion transaccional enriquecida en salidas analiticas resumidas, orientadas a la deteccion de comportamientos atipicos y al consumo desde BigQuery.
 
-## 4. Modelo de integracion
+Responsabilidades principales:
 
-### Entidades base
+- generar vistas analiticas de negocio
+- conservar compatibilidad con procesamiento por particiones
+- soportar ejecuciones `full`, `incremental` y `backfill`
 
-#### Transacciones
+Activos generados:
 
-- granularidad: una fila por transaccion
-- clave esperada: `transaction_id`
+- `gold/card_summary/data.parquet`
+- `gold/merchant_summary/data.parquet`
+- `gold/daily_kpis/data.parquet`
+- `gold/_state/processed_partitions.json`
 
-#### Merchants
+## 5. Integracion y reglas de negocio
 
-- granularidad: una fila por merchant
-- clave esperada: `merchant_id`
+### 5.1 Join transaccional
 
-#### FX rates
+La integracion principal entre transacciones y merchants se realiza mediante la clave `merchant_id`.
 
-- granularidad: una fila por fecha y par de monedas
-- clave esperada: `rate_date + base_currency + target_currency`
+Decisiones tecnicas:
 
-### Clave de enriquecimiento
+- clave principal: `merchant_id`
+- estrategia de join: `left join`
+- criterio funcional: preservar transacciones aunque no exista correspondencia en el catalogo de merchants
 
-La integracion principal entre transacciones y merchants se hara por `merchant_id`.
+### 5.2 Tipo de cambio
 
-La integracion con FX se hara por:
+La fuente de tipo de cambio se ingiere, valida y limpia, pero no se integra aun a las transacciones en la capa `silver`, debido a que la fuente transaccional actualmente no contiene la informacion de moneda necesaria para una conversion monetaria consistente.
 
-- fecha de compra normalizada
-- moneda origen
-- moneda destino objetivo
+## 6. Arquitectura interna de gold
 
-## 5. Incrementalidad
+La implementacion de la capa `gold` sigue una separacion modular:
 
-Se define una estrategia incremental por watermark local.
+- `aggregations.py`: calcula los indicadores agregados por tarjeta, comercio y dia
+- `build_gold.py`: actua como punto de entrada y soporta los modos `full`, `incremental` y `backfill`
+- `incremental.py`: gestiona el archivo de estado y detecta particiones nuevas
+- `backfill.py`: valida y resuelve particiones a reprocesar
+- `io_gold.py`: centraliza la lectura y escritura de archivos parquet
 
-Estado minimo:
+Las salidas analiticas principales son:
 
-- archivo `state.json` en ejecucion local
-- campo de control `last_processed_purchase_timestamp`
+- `card_summary`
+- `merchant_summary`
+- `daily_kpis`
 
-Comportamiento:
+Estas tablas no representan un modelo predictivo de fraude, sino una base analitica sobre la cual pueden definirse reglas de negocio para identificar comportamientos atipicos, por ejemplo:
 
-- cada corrida procesa solo datos posteriores al watermark
-- si no existe estado, corre una carga completa inicial
-- se habilitara backfill manual por fecha en una etapa posterior
+- montos acumulados inusualmente altos por tarjeta
+- volumen anomalo de transacciones por comercio
+- patrones diarios fuera de rango esperado
 
-## 6. Mapeo a servicios cloud
+## 7. Estrategia incremental
 
-### GCP principal
+La estrategia incremental actualmente implementada se basa en la deteccion de nuevas particiones dentro de `silver/transactions`.
 
-- almacenamiento de bronze y silver: Google Cloud Storage
-- almacenamiento analitico gold: BigQuery
-- orquestacion futura: Cloud Composer o ejecucion programada
+Flujo:
 
-### AWS secundaria
+- lectura del estado previo desde `gold/_state/processed_partitions.json`
+- comparacion contra las particiones disponibles en `silver/transactions/*.parquet`
+- identificacion de nuevas particiones
+- reconstruccion de la capa `gold` con el conjunto actualizado
+- persistencia del nuevo estado
 
-- extension ligera opcional para exportar subset de `gold` a S3
+Este enfoque ofrece una simulacion robusta de incrementalidad sin requerir aun un motor de orquestacion externo.
 
-## 7. Riesgos y mitigaciones
+## 8. Implementacion de referencia en GCP
 
-### Cambio de estructura en la API FX
+La referencia cloud actual se despliega sobre Google Cloud Platform con la siguiente configuracion:
+
+- nombre del proyecto: `fraud-medallion-pipeline`
+- project id: `arboreal-logic-493416-i6`
+- region operativa: `us-east1`
+- datasets BigQuery: `bronze`, `silver`, `gold`
+- bucket GCS utilizado: `fraud-medallion-raw-fab`
+
+### 8.1 Uso de GCS
+
+Google Cloud Storage se utiliza como repositorio de archivos para las capas `bronze` y `silver`, permitiendo conservar la organizacion por carpetas y la trazabilidad de particiones.
+
+Estructura de objetos publicada en el bucket:
+
+```text
+gs://fraud-medallion-raw-fab/fraud_medallion/bronze/
+|-- bronze_fx_rates.parquet
+|-- bronze_merchants.parquet
+`-- transactions/
+    |-- part_00001.parquet
+    |-- part_00002.parquet
+    `-- ...
+
+gs://fraud-medallion-raw-fab/fraud_medallion/silver/
+|-- silver_fx_rates.parquet
+`-- transactions/
+    |-- part_00001.parquet
+    |-- part_00002.parquet
+    `-- ...
+```
+
+Esta organizacion mantiene correspondencia directa con la estructura local del repositorio y facilita auditoria, reproceso y validacion manual de archivos.
+
+### 8.2 Uso de BigQuery
+
+BigQuery se utiliza como capa de consumo analitico final para la informacion `gold`. Las tablas publicadas son:
+
+- `arboreal-logic-493416-i6.gold.card_summary`
+- `arboreal-logic-493416-i6.gold.merchant_summary`
+- `arboreal-logic-493416-i6.gold.daily_kpis`
+
+Estas tablas constituyen la base para consultas exploratorias, monitoreo operativo y reglas de identificacion de riesgo.
+
+## 9. Riesgos y mitigaciones
+
+### 9.1 Cambio de estructura en la API FX
 
 Mitigacion:
 
-- validacion de esquema
-- manejo de timeout y respuesta vacia
+- validacion de status HTTP
+- validacion de respuesta JSON
+- verificacion explicita de la clave `rates`
 
-### Faltantes en `merchant_id`
-
-Mitigacion:
-
-- reglas de calidad en silver
-- bandera de registros no enriquecidos
-
-### Tipos de cambio faltantes por fecha
+### 9.2 Contratos desalineados respecto de las fuentes
 
 Mitigacion:
 
-- marcar registros no convertibles
-- definir estrategia de fallback documentada en silver
+- validacion automatica antes de persistir `bronze` y `silver`
+- pruebas automatizadas sobre contratos y transformaciones
 
-## 8. Observabilidad inicial
+### 9.3 Estado incremental inconsistente
 
-Se dejara preparada una base minima de operacion:
+Mitigacion:
 
-- logs estructurados por etapa
-- conteo de registros por fuente y capa
-- errores claros al fallar contratos o joins criticos
+- ejecucion `full` como reconstruccion limpia
+- backfill controlado sobre particiones existentes
 
-## 9. Estado del documento
+## 10. Observabilidad y trazabilidad
 
-Este documento cubre el borrador funcional del Dia 1 y servira como base para ampliar transformaciones, contratos de datos, operacion en GCP y observabilidad en los siguientes dias.
+La solucion ya contempla mecanismos basicos de observabilidad:
+
+- logs por etapa de procesamiento
+- conteo de chunks procesados en ingesta
+- mensajes explicitos ante fallos de fuente o validacion
+- archivo de estado para trazabilidad incremental
+
+En conjunto, estos elementos permiten entender el estado del pipeline, reproducir ejecuciones y justificar tecnicamente la evolucion posterior hacia un entorno mas operativo.

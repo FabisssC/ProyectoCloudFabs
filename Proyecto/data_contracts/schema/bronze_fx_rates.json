@@ -1,0 +1,11 @@
+{
+  "table": "bronze_fx_rates",
+  "columns": {
+    "base_currency": {"type": "string", "nullable": false},
+    "target_currency": {"type": "string", "nullable": false},
+    "rate": {"type": "float", "nullable": false},
+    "rate_date": {"type": "string", "nullable": false},
+    "source_name": {"type": "string", "nullable": false},
+    "ingest_ts": {"type": "string", "nullable": false}
+  }
+}
