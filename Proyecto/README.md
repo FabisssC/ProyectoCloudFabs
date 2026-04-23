@@ -1,7 +1,7 @@
 # Pipeline Multicloud de Fraude Financiero
 
 ## Resumen
-
+- Link de video: [Proyecto Final](https://youtu.be/ENJdbGsSglo)
 Este proyecto implementa un pipeline medallion para crear una capa gold que ayude al analisis de fraude financiero a partir de:
 
 - transacciones historicas en CSV
@@ -172,9 +172,9 @@ Esta estrategia fue adecuada para desarrollo. Para una version operativa o produ
 ```powershell
 python -m src.pipeline.orchestration.publish_gcp_reference
 ```
-
+![bucket](bucket.png)
 ## Validacion en BigQuery
-
+![BQ](BQ.png)
 Ejemplos de consultas para validar las tablas publicadas:
 
 ```sql

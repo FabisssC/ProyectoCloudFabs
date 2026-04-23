@@ -13,7 +13,7 @@ PowerShell:
 ```powershell
 cd Proyecto
 python -m venv .venv
-.venv_proy\Scripts\Activate.ps1
+
 ```
 ```
  .\venv_proy\Scripts\Activate.ps1    
