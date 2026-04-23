@@ -108,8 +108,8 @@ Resumen actual reportado por tu avance:
 
 ```powershell
 cd Proyecto
-python -m venv .venv
-.venv\Scripts\Activate.ps1
+python -m venv_proy .venv
+.venv_proy\Scripts\Activate.ps1
 pip install -r requirements.txt -r requirements-dev.txt
 Copy-Item .env.example .env
 ```

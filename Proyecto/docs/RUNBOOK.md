@@ -6,24 +6,31 @@ Documentar como operar localmente el pipeline medallion y como usar la referenci
 
 ## Preparacion local
 
-### 1. Crear entorno virtual
+### 1. Crear y activar entorno virtual
 
 PowerShell:
 
 ```powershell
 cd Proyecto
 python -m venv .venv
-.venv\Scripts\Activate.ps1
+.venv_proy\Scripts\Activate.ps1
+```
+```
+ .\venv_proy\Scripts\Activate.ps1    
+```
+### 2. Entrar a carpeta del Proyecto 
+```
+cd Proyecto
 ```
 
-### 2. Instalar dependencias
+### 3. Instalar dependencias
 
 ```powershell
 pip install -r requirements.txt -r requirements-dev.txt
 ```
 
-### 3. Configurar variables de entorno
-
+### 4. Configurar variables de entorno
+Crear una copia del archivo .env.example a un archivo .env con las variables propias.
 ```powershell
 Copy-Item .env.example .env
 ```

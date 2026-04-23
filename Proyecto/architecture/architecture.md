@@ -48,7 +48,8 @@ flowchart LR
     L --> T[GCS silver]
 ```
 
-Para fines de entrega formal, se recomienda exportar este diagrama Mermaid a PNG o SVG y adjuntarlo como imagen en el documento final, manteniendo el codigo fuente en el repositorio para futuras actualizaciones.
+![Texto alternativo](diagrams/arquitectura.png)
+
 
 ## 4. Descripcion de las capas
 

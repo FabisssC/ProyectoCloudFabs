@@ -9,3 +9,7 @@ structlog>=24.1.0
 # GCP
 google-cloud-storage>=2.18.0
 google-cloud-bigquery[pandas]>=3.25.0
+
+# Validacion basica del proyecto
+pytest>=8.0.0
+pytest-cov>=5.0.0
